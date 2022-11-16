@@ -1,15 +1,19 @@
 # importing module 
 
+try:
+    import tkinter as tk
+    import tkinter.ttk as ttk
+    from tkinter.filedialog import askopenfilename
+except ModuleNotFoundError:
+    print("Tkinter not found. Run 'apt-get install python-tk' on Mac and Linux. Git gud if on Windows")
+    exit()
+from PIL import Image, ImageTk
 from pytube import YouTube, Search
-import tkinter as tk
-import tkinter.ttk as ttk
-from tkinter.filedialog import askopenfilename
 import threading
 import webbrowser
 from os import getcwd
 from os import path
 import urllib
-from PIL import Image, ImageTk
 import io
 import re
 from sys import argv
