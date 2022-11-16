@@ -1,6 +1,5 @@
 # importing module 
 
-import argparse
 from pytube import YouTube, Search
 import tkinter as tk
 import tkinter.ttk as ttk
@@ -13,6 +12,7 @@ import urllib
 from PIL import Image, ImageTk
 import io
 import re
+from sys import argv
 #import random
 
 def correct_name_format(name: str):
@@ -210,8 +210,7 @@ class maingui(tk.Tk):
                         existing_yt.add(yt.embed_url)
         return yt_list
 
-    def download_prompt_file(self):
-        filename = askopenfilename()
+    def download_from_file(self, filename: str):
         self.upload_texts.configure(text = "Parsing...")
         self.update_idletasks()
         with open(filename, "r", encoding="utf-8") as f:
@@ -219,6 +218,10 @@ class maingui(tk.Tk):
         yt_list = self.parse_text_for_yt(text)
         self.download_list(yt_list)
         self.upload_texts.configure(text = "From list")
+
+    def download_prompt_file(self):
+        filename = askopenfilename()
+        self.download_from_file(filename)
 
     def search_video(self):
         search_result = Search(self.search_inp.get())
@@ -234,7 +237,12 @@ class maingui(tk.Tk):
             
 
 if __name__ == "__main__":
+
     maingui = maingui("Tube2mp3", "800x400") 
     maingui.tk.call("source", "azure.tcl")
     maingui.tk.call("set_theme", "light")
+
+    if len(argv) > 1:
+        maingui.download_from_file(argv[1])
     maingui.mainloop()
+    
