@@ -11,6 +11,7 @@ from os import path
 import urllib
 from PIL import Image, ImageTk
 import io
+import re
 #import random
 
 def correct_name_format(name: str):
@@ -19,6 +20,27 @@ def correct_name_format(name: str):
                    .replace("*", "").replace("?", "")\
                    .replace("<", "").replace(">", "").replace("|", "")
 
+
+class ScrollableFrame(ttk.Frame):
+    def __init__(self, container, *args, **kwargs):
+        super().__init__(container, *args, **kwargs)
+        canvas = tk.Canvas(self)
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        self.scrollable_frame = ttk.Frame(canvas)
+
+
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(
+                scrollregion=canvas.bbox("all")
+            )
+        )
+
+        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
 
 class QueryGUI(ttk.Frame):
     thumbnails = {}
@@ -86,14 +108,16 @@ class maingui(tk.Tk):
         self.search_b = ttk.Button(self, text = "search", command=self.search_video)
         self.search_b.grid(row = 0, column = 0,sticky=tk.W, padx=5, pady=2)
 
-        self.search_inp = ttk.Entry(self, width=10)
+        self.search_inp = ttk.Entry(self)
         self.search_inp.grid(row = 0, column = 1, sticky=tk.W)
 
-        self.query_container = ttk.Frame(self)
-        self.query_container.grid(row = 1, column=0, columnspan=3)
+        self.query_scroll_container = ScrollableFrame(self)
+        self.query_container = self.query_scroll_container.scrollable_frame
+        self.query_scroll_container.grid(row = 1, rowspan=2, column=0, columnspan=3)
 
-        self.download_container = ttk.Frame(self)
-        self.download_container.grid(row = 1, column=3, columnspan=4, sticky = tk.NW)
+        self.download_scroll_container = ScrollableFrame(self)
+        self.download_container = self.download_scroll_container.scrollable_frame
+        self.download_scroll_container.grid(row = 1, column=3, columnspan=4, sticky = tk.NW)
 
         self.directory_label = ttk.Label(self, text= "Save directory: ")
         self.directory_label.grid(row = 0, column = 3)
@@ -126,10 +150,9 @@ class maingui(tk.Tk):
             elif self.download_objects[yt_obj.embed_url][0] == "done":
                 webbrowser.open(self.save_directory)
 
-    def new_download(self, embed_url: str):
-        if embed_url in self.download_objects.keys():
+    def new_download(self, yt_obj: YouTube):
+        if yt_obj.embed_url in self.download_objects.keys():
             return
-        yt_obj = self.query_objects[embed_url].yt
 
         def rm_download(embed_url: str):
                 self.download_objects[embed_url][1].destroy()
@@ -137,7 +160,7 @@ class maingui(tk.Tk):
 
         button_args = [
             {"text": "Downloading...", "name": "status_button", "command": lambda:self.pause_download_or_open(yt_obj)}, 
-            {"text": "X", "command": lambda:rm_download(embed_url)}
+            {"text": "X", "command": lambda:rm_download(yt_obj.embed_url)}
             ]
         d_obj = QueryGUI(self.download_container, yt_obj, button_args)
         d_obj.configure(borderwidth=1,  relief="solid")
@@ -146,7 +169,29 @@ class maingui(tk.Tk):
         
         threading.Thread(target = self.download_audio, args=[yt_obj, d_obj.buttons["status_button"]]).start()
 
+    def new_download(self, embed_url: str):
+        yt_obj = self.query_objects[embed_url].yt
+        self.new_download(yt_obj)
 
+    def download_list(self, yt_list):
+        for yt in yt_list:
+            self.new_download(yt)
+
+    def get_links_in_text(text: str):
+        return re.findall("(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", text)
+    def parse_text_for_yt(text: str):
+        yt_list = []
+        for line in text.splitlines(keepends=False):
+            links = maingui.get_links_in_text(line)
+            for link in links:
+                try:
+                    yt = YouTube(link)
+                    yt.check_availability()
+                except:
+                    continue
+                else:
+                    yt_list.append(yt)
+            
     def search_video(self):
         search_result = Search(self.search_inp.get())
         self.search_inp.delete(0, 'end')
