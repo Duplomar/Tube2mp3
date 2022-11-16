@@ -3,9 +3,10 @@
 import argparse
 from pytube import YouTube, Search
 import tkinter as tk
+import tkinter.ttk as ttk
+from tkinter.filedialog import askopenfilename
 import threading
 import webbrowser
-import tkinter.ttk as ttk
 from os import getcwd
 from os import path
 import urllib
@@ -109,6 +110,7 @@ class maingui(tk.Tk):
         self.search_b.grid(row = 0, column = 0,sticky=tk.W, padx=5, pady=2)
 
         self.search_inp = ttk.Entry(self)
+        self.search_inp.bind("<Return>", lambda x: self.search_video())
         self.search_inp.grid(row = 0, column = 1, sticky=tk.W)
 
         self.query_scroll_container = ScrollableFrame(self)
@@ -119,11 +121,15 @@ class maingui(tk.Tk):
         self.download_container = self.download_scroll_container.scrollable_frame
         self.download_scroll_container.grid(row = 1, column=3, columnspan=4, sticky = tk.NW)
 
+        
+        self.upload_texts = ttk.Button(self, text = "From list", command=self.download_prompt_file)
+        self.upload_texts.grid(row = 0, column = 3)
+        
         self.directory_label = ttk.Label(self, text= "Save directory: ")
-        self.directory_label.grid(row = 0, column = 3)
+        self.directory_label.grid(row = 0, column = 4)
         self.directory_path_text = tk.Text(self, height=1)
         self.directory_path_text.insert(tk.END, self.save_directory)
-        self.directory_path_text.grid(row = 0, column = 4, padx=5)
+        self.directory_path_text.grid(row = 0, column = 5, padx=5)
 
 
 
@@ -150,7 +156,7 @@ class maingui(tk.Tk):
             elif self.download_objects[yt_obj.embed_url][0] == "done":
                 webbrowser.open(self.save_directory)
 
-    def new_download(self, yt_obj: YouTube):
+    def new_download_yt(self, yt_obj: YouTube):
         if yt_obj.embed_url in self.download_objects.keys():
             return
 
@@ -171,18 +177,27 @@ class maingui(tk.Tk):
 
     def new_download(self, embed_url: str):
         yt_obj = self.query_objects[embed_url].yt
-        self.new_download(yt_obj)
+        self.new_download_yt(yt_obj)
 
     def download_list(self, yt_list):
         for yt in yt_list:
-            self.new_download(yt)
+            self.new_download_yt(yt)
 
-    def get_links_in_text(text: str):
+    def get_links_in_text(self, text: str):
         return re.findall("(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})", text)
-    def parse_text_for_yt(text: str):
+    def parse_text_for_yt(self, text: str):
         yt_list = []
+        existing_yt = set()
         for line in text.splitlines(keepends=False):
-            links = maingui.get_links_in_text(line)
+            links = self.get_links_in_text(line)
+            if len(links) == 0:
+                search_results = Search(line).results
+                if len(search_results):
+                    yt = search_results[0]
+                    if yt.embed_url not in existing_yt:
+                        yt_list.append(yt)
+                        existing_yt.add(yt.embed_url)
+
             for link in links:
                 try:
                     yt = YouTube(link)
@@ -190,8 +205,21 @@ class maingui(tk.Tk):
                 except:
                     continue
                 else:
-                    yt_list.append(yt)
-            
+                    if yt.embed_url not in existing_yt:
+                        yt_list.append(yt)
+                        existing_yt.add(yt.embed_url)
+        return yt_list
+
+    def download_prompt_file(self):
+        filename = askopenfilename()
+        self.upload_texts.configure(text = "Parsing...")
+        self.update_idletasks()
+        with open(filename, "r", encoding="utf-8") as f:
+            text = f.read()
+        yt_list = self.parse_text_for_yt(text)
+        self.download_list(yt_list)
+        self.upload_texts.configure(text = "From list")
+
     def search_video(self):
         search_result = Search(self.search_inp.get())
         self.search_inp.delete(0, 'end')
