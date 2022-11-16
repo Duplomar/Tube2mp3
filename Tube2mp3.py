@@ -3,15 +3,15 @@
 try:
     import tkinter as tk
     import tkinter.ttk as ttk
-    from tkinter.filedialog import askopenfilename
+    from tkinter.filedialog import askopenfilename, askdirectory
+    from tkinter.messagebox import askokcancel
 except ModuleNotFoundError:
     print("Tkinter not found. Run 'apt-get install python-tk' on Mac and Linux. Git gud if on Windows")
     exit()
 from PIL import Image, ImageTk
 from pytube import YouTube, Search
 import threading
-import webbrowser
-from os import getcwd
+from os import getcwd, startfile
 from os import path
 import urllib
 import io
@@ -131,34 +131,31 @@ class maingui(tk.Tk):
         
         self.directory_label = ttk.Label(self, text= "Save directory: ")
         self.directory_label.grid(row = 0, column = 4)
-        self.directory_path_text = tk.Text(self, height=1)
+        self.directory_path_text = tk.Text(self, height=1, width=10)
         self.directory_path_text.insert(tk.END, self.save_directory)
         self.directory_path_text.grid(row = 0, column = 5, padx=5)
-
-
+        self.directory_path_select = ttk.Button(self, text="...", command=self.prompt_save_directory)
+        self.directory_path_select.grid(row = 0, column = 6)
 
         self.query_objects = {}
         self.download_objects = {}
         self.thumbnails = {}
         
     def download_audio(self, yt_obj: YouTube, update_button: ttk.Button):
-        self.save_directory = self.directory_path_text.get('1.0', 'end').strip()
+        #self.save_directory = self.directory_path_text.get('1.0', 'end').strip()
         
         audio_stream = yt_obj.streams.get_audio_only()
-        
-        audio_stream.download(filename = path.join(self.save_directory, correct_name_format(yt_obj.title)) + ".mp3")
+        filename = path.join(self.save_directory, correct_name_format(yt_obj.title)) + ".mp3"
+        audio_stream.download(filename = filename)
         update_button.configure(text="Open")
         self.download_objects[yt_obj.embed_url][0] = "done"
+        self.download_objects[yt_obj.embed_url][3] = filename
         #self.download_objects.pop(yt_obj.embed_url)
 
-    def pause_download_or_open(self, yt_obj: YouTube):
+    def open_if_download_done(self, yt_obj: YouTube):
         if yt_obj.embed_url in self.download_objects.keys():
-            if self.download_objects[yt_obj.embed_url][0] == "down":
-                self.download_objects[yt_obj.embed_url][0] = "pause"
-            elif self.download_objects[yt_obj.embed_url][0] == "pause:":
-                self.download_objects[yt_obj.embed_url][0] = "down"
-            elif self.download_objects[yt_obj.embed_url][0] == "done":
-                webbrowser.open(self.save_directory)
+            if self.download_objects[yt_obj.embed_url][0] == "done":
+                startfile(self.download_objects[yt_obj.embed_url][3])
 
     def new_download_yt(self, yt_obj: YouTube):
         if yt_obj.embed_url in self.download_objects.keys():
@@ -169,15 +166,18 @@ class maingui(tk.Tk):
                 self.download_objects.pop(embed_url)
 
         button_args = [
-            {"text": "Downloading...", "name": "status_button", "command": lambda:self.pause_download_or_open(yt_obj)}, 
+            {"text": "Downloading...", "name": "status_button", "command": lambda:self.open_if_download_done(yt_obj)}, 
             {"text": "X", "command": lambda:rm_download(yt_obj.embed_url)}
             ]
         d_obj = QueryGUI(self.download_container, yt_obj, button_args)
         d_obj.configure(borderwidth=1,  relief="solid")
-        self.download_objects[yt_obj.embed_url] = ["down", d_obj]
         d_obj.grid(row = len(self.download_objects), column=0, sticky=tk.NW)
         
-        threading.Thread(target = self.download_audio, args=[yt_obj, d_obj.buttons["status_button"]]).start()
+        download_th = threading.Thread(target = self.download_audio, args=[yt_obj, d_obj.buttons["status_button"]])
+        download_th.daemon = True
+        download_th.start()
+        
+        self.download_objects[yt_obj.embed_url] = ["down", d_obj, download_th, ""]
 
     def new_download(self, embed_url: str):
         yt_obj = self.query_objects[embed_url].yt
@@ -225,9 +225,23 @@ class maingui(tk.Tk):
 
     def download_prompt_file(self):
         filename = askopenfilename()
-        self.download_from_file(filename)
+        if len(filename):
+            self.download_from_file(filename)
+
+    def update_save_directory(self, new_dir):
+        self.save_directory = new_dir
+        self.directory_path_text.delete('1.0', 'end')
+        self.directory_path_text.insert('1.0', new_dir)
+    def prompt_save_directory(self):
+        new_dir = askdirectory()
+        if len(new_dir):
+            self.update_save_directory(new_dir)
+
 
     def search_video(self):
+        self.search_b.configure(text="Searching...")
+        self.update_idletasks()
+
         search_result = Search(self.search_inp.get())
         self.search_inp.delete(0, 'end')
         for key in self.query_objects.keys():
@@ -238,15 +252,38 @@ class maingui(tk.Tk):
             self.query_objects[yt.embed_url] = QueryGUI(self.query_container, yt, [{"text": "Download", "command": self.new_download, "callback_args": {"embed_url":yt.embed_url}}])
             self.query_objects[yt.embed_url].configure(borderwidth=1,  relief="solid")
             self.query_objects[yt.embed_url].grid(row = len(self.query_objects), column=0, sticky=tk.W, padx=5, pady = 5)
-            
+        self.search_b.configure(text="Search")
+    def handle_close(self):
+        for v in self.download_objects.values():
+            if v[2].is_alive():
+                if askokcancel("Audio still downloading", "There are unfinished files downloading. Do you still want to quit?"):
+                    break
+                else:
+                    return
+        self.destroy()
+        
+
 
 if __name__ == "__main__":
+    for arg in argv[1:]:
+        if arg == "-h" or arg == "--help":
+            print("Audio download tool. Pass a file as argument to download the audio in all videos that are mentioned, or pass a directory to set the download location")
+            exit()
 
-    maingui = maingui("Tube2mp3", "800x400") 
+    maingui = maingui("Tube2mp3", "800x400")
+    
+    maingui.protocol("WM_DELETE_WINDOW", maingui.handle_close)
     maingui.tk.call("source", "azure.tcl")
     maingui.tk.call("set_theme", "light")
 
     if len(argv) > 1:
-        maingui.download_from_file(argv[1])
+        list_file = ""
+        for arg in argv[1:]:
+            if path.isfile(arg):
+                list_file = arg
+            elif path.isdir(arg):
+                maingui.update_save_directory(arg)
+        if len(list_file):
+            maingui.download_from_file(list_file)
     maingui.mainloop()
     
