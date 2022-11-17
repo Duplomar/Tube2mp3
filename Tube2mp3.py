@@ -17,7 +17,6 @@ import urllib
 import io
 import re
 from sys import argv
-#import random
 
 def correct_name_format(name: str):
         return name.replace("\"", "").replace("/", "") \
@@ -102,7 +101,7 @@ class maingui(tk.Tk):
         # data
         self.search_term = ""
         self.save_directory = getcwd()
-
+        self.search_th = None
 
         # Visuals
         self.title(title)
@@ -110,11 +109,11 @@ class maingui(tk.Tk):
 
         self.grid()
 
-        self.search_b = ttk.Button(self, text = "search", command=self.search_video)
+        self.search_b = ttk.Button(self, text = "search", command=self.begin_search)
         self.search_b.grid(row = 0, column = 0,sticky=tk.W, padx=5, pady=2)
 
         self.search_inp = ttk.Entry(self)
-        self.search_inp.bind("<Return>", lambda x: self.search_video())
+        self.search_inp.bind("<Return>", lambda x: self.begin_search())
         self.search_inp.grid(row = 0, column = 1, sticky=tk.W)
 
         self.query_scroll_container = ScrollableFrame(self)
@@ -131,9 +130,12 @@ class maingui(tk.Tk):
         
         self.directory_label = ttk.Label(self, text= "Save directory: ")
         self.directory_label.grid(row = 0, column = 4)
+
         self.directory_path_text = tk.Text(self, height=1, width=10)
         self.directory_path_text.insert(tk.END, self.save_directory)
+        self.directory_path_text.bind("<KeyRelease>", lambda x: self.update_save_directory(self.directory_path_text.get('1.0', 'end').strip()))
         self.directory_path_text.grid(row = 0, column = 5, padx=5)
+
         self.directory_path_select = ttk.Button(self, text="...", command=self.prompt_save_directory)
         self.directory_path_select.grid(row = 0, column = 6)
 
@@ -142,15 +144,12 @@ class maingui(tk.Tk):
         self.thumbnails = {}
         
     def download_audio(self, yt_obj: YouTube, update_button: ttk.Button):
-        #self.save_directory = self.directory_path_text.get('1.0', 'end').strip()
-        
         audio_stream = yt_obj.streams.get_audio_only()
         filename = path.join(self.save_directory, correct_name_format(yt_obj.title)) + ".mp3"
         audio_stream.download(filename = filename)
         update_button.configure(text="Open")
         self.download_objects[yt_obj.embed_url][0] = "done"
         self.download_objects[yt_obj.embed_url][3] = filename
-        #self.download_objects.pop(yt_obj.embed_url)
 
     def open_if_download_done(self, yt_obj: YouTube):
         if yt_obj.embed_url in self.download_objects.keys():
@@ -229,21 +228,30 @@ class maingui(tk.Tk):
             self.download_from_file(filename)
 
     def update_save_directory(self, new_dir):
-        self.save_directory = new_dir
-        self.directory_path_text.delete('1.0', 'end')
-        self.directory_path_text.insert('1.0', new_dir)
+        if path.isdir(new_dir):
+            print("Updating dir", new_dir)
+            self.save_directory = new_dir
+            self.directory_path_text.delete('1.0', 'end')
+            self.directory_path_text.insert('1.0', new_dir)
+
+
     def prompt_save_directory(self):
         new_dir = askdirectory()
         if len(new_dir):
             self.update_save_directory(new_dir)
 
+    def begin_search(self):
+        search_term = self.search_inp.get().strip()
+        if len(search_term) and self.search_th == None:
+            self.search_inp.delete(0, 'end')
+            print("new search")
+            self.search_b.configure(text="Searching...")
+            self.search_th = threading.Thread(target = self.search_video, args=[search_term])
+            self.search_th.daemon = True
+            self.search_th.start()
 
-    def search_video(self):
-        self.search_b.configure(text="Searching...")
-        self.update_idletasks()
-
-        search_result = Search(self.search_inp.get())
-        self.search_inp.delete(0, 'end')
+    def search_video(self, search_term):
+        search_result = Search(search_term)
         for key in self.query_objects.keys():
             self.query_objects[key].destroy()
         self.query_objects.clear()
@@ -253,6 +261,8 @@ class maingui(tk.Tk):
             self.query_objects[yt.embed_url].configure(borderwidth=1,  relief="solid")
             self.query_objects[yt.embed_url].grid(row = len(self.query_objects), column=0, sticky=tk.W, padx=5, pady = 5)
         self.search_b.configure(text="Search")
+        self.search_th = None
+
     def handle_close(self):
         for v in self.download_objects.values():
             if v[2].is_alive():
